@@ -1,0 +1,32 @@
+# R session files
+.Rhistory
+.RData
+.Ruserdata
+.Rproj.user/
+
+# OS-specific files
+.DS_Store
+Thumbs.db
+
+# Compiled files
+*.o
+*.so
+*.dll
+
+# renv files (except renv.lock)
+renv/library/
+renv/staging/
+
+# Package archives
+*.tar.gz
+
+# Reports and logs
+*.Rout
+*.log
+
+# Misc
+*.swp
+
+weight_loss_analysis_cache
+weight_loss_analysis.html
+.qodo

@@ -1,0 +1,276 @@
+---
+title: "Weight loss analysis"
+author: "Md. Fardin Khan"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    theme: cerulean
+    toc: true
+    toc_float: true
+    code_folding: show
+---
+
+# **Purpose of the Study**
+Obesity and overweight conditions are major public health concerns. This study aims to analyze the **effectiveness of a 12-week weight loss program** using a dataset collected from 35 participants.I will examine the relationships or impact between **diet adherence, exercise intensity, sleep quality**, and **weight loss** using statistical methods in R.
+
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, cache = TRUE, warning = FALSE, message = FALSE)
+```
+
+# **Load Required Libraries**
+```{r}
+# Load necessary libraries
+library(ggplot2)  
+library(dplyr)     
+library(corrplot)
+library(readxl)
+library(naniar)
+library(car)
+library(gtsummary)
+```
+
+# ** Import Dataset **
+```{r}
+data <- read_excel("Data_WeightLoss.xlsx")
+head(data)
+```
+# ** EDA **
+```{r}
+isnull <- colSums(is.na(data))
+print(paste("Missing value count:", isnull))
+
+gg_miss_var(data,show_pct = TRUE)+
+  labs(y = "Displaying the proportion of missings")
+```
+
+```{r}
+numeric_cols <- data[sapply(data, is.numeric)]
+stats <- data.frame(
+  Mean = sapply(numeric_cols, mean, na.rm = TRUE),
+  Std = sapply(numeric_cols, sd, na.rm = TRUE),
+  Min = sapply(numeric_cols, min, na.rm = TRUE),
+  Q1 = sapply(numeric_cols, function(x) quantile(x, 0.25, na.rm = TRUE)),
+  Median = sapply(numeric_cols, median, na.rm = TRUE),
+  Q3 = sapply(numeric_cols, function(x) quantile(x, 0.75, na.rm = TRUE)),
+  Max = sapply(numeric_cols, max, na.rm = TRUE),
+  IQR = sapply(numeric_cols, IQR, na.rm = TRUE)
+)
+
+stats$Lower_Bound = stats$Q1 - 1.5*stats$IQR
+stats$Upper_Bound = stats$Q3 + 1.5*stats$IQR
+
+print(stats)
+
+```
+## Data Inspection and Observations
+
+Upon inspecting the dataset, the following observations were made:
+
+- **Missing values**: The dataset has **1 missing value** in the `ExerciseIntensity` column.
+- **Gender column**: The `Gender` column is in **character format**. It may be beneficial to convert this column into a numeric format for further analysis.
+- **Participant column**: The `Participant` column appears to be a **serial number** rather than a categorical or numeric variable of interest.
+
+- **Outlier**: As per the `Lower_Bound` and `Upper_Bound` of the each column shows that there is no outlier value
+
+
+```{r}
+# Drop Participant col
+data <- data %>% select(-Participant)
+# Convert Gender to factor
+data$Gender <- as.factor(data$Gender)
+head(data)
+```
+
+```{r fig.width=10, fig.height=5}
+# checking up the correlation with columns and convert the gender factor to numeric and store in "Gender_numeric" column
+data$Gender_numeric <- as.numeric(factor(data$Gender))
+
+cor_matrix <- cor(data[, c("WeightLoss", "BaselineWeight","Age", "AfterWeight", "DietAdherence", "ExerciseIntensity", "SleepQuality", "Gender_numeric")], use="complete.obs")
+
+corrplot(cor_matrix, method="number", type="full",order = 'AOE',col= COL2('PuOr', 40),)
+
+print(cor_matrix)
+
+```
+
+## Interpretation of Correlation Results
+
+From the correlation matrix, we observe that the `WeightLoss` attribute has significant correlations with several other numeric variables. Specifically:
+
+- **Positive correlations**: 
+   - `DietAdherence` and `ExerciseIntensity` show strong positive correlations with `WeightLoss`.
+   - `SleepQuality` and `Gender_numeric` also exhibit positive correlations with `WeightLoss`.
+
+- **Negative correlations**: 
+   - `BaselineWeight`, `AfterWeight` and `Age` have negative correlations with `WeightLoss`, indicating that as these variables increase, weight loss tends to decrease.
+
+Overall, we can conclude that `DietAdherence` and `ExerciseIntensity` are key factors positively influencing weight loss, while `BaselineWeight` and `Age` are negatively related.
+
+## Data Visualization
+```{r}
+for (i in names(data)){
+  if (i %in% c("WeightLoss","BaselineWeight","Age", "DietAdherence", "ExerciseIntensity", "SleepQuality")){
+   print(
+     ggplot(data, aes_string(x = i)) +
+        geom_histogram(color = "black", bins = 5, alpha = 0.6)  +
+        labs(title = paste("Histogram of ", i), x = i, y = "Frequency") +
+        theme_minimal()
+   )
+  }
+}
+
+```
+
+# ** Regression with threshold = 0.3 **
+In here if i select `threshold = 0.3` than columns will:
+
+- **DietAdherence**
+- **ExerciseIntensity**
+- **Age**
+- **AfterWeight**
+```{r}
+model <- lm(WeightLoss ~ Age + AfterWeight + DietAdherence + ExerciseIntensity, data = data)
+
+model %>%
+  tbl_regression() %>%
+  bold_labels() %>%
+  bold_p(t=.1)
+
+```
+```{r}
+summary(model)
+```
+
+```{r}
+qqnorm(resid(model))
+qqline(resid(model))
+
+```
+
+```{r}
+#plot(model$fitted.values, resid(model))
+#abline(h=0, col="red")
+
+```
+
+```{r}
+print(vif(model))
+
+barplot(vif(model), main = "VIF Plot", col = "lightblue", ylim = c(0, max(vif(model)) + 10))
+abline(h = 10, col = "red", lty = 2)
+
+```
+
+## Finding on threshold = 0.3
+My Model demonstrates exceptional statistical significance with an `F-statistic of 26.03` and a ` p-value of 3.117e-09`.With an `R-squared value of 0.78` indicates that our model explains `78%` of the variance in weight loss outcomes. [[4](https://statisticsbyjim.com/regression/interpret-r-squared-regression/#:~:text=R%2Dsquared%20is%20a%20goodness%2Dof%2Dfit,variance%20in%20the%20dependent)][[5](https://en.wikipedia.org/wiki/P-value)]
+
+In here the residuals range from `-1.62` to `1.38`, with a median close to zero, which is generally a good sign.
+
+All `Variance Inflation Factor (VIF)` values in our model are below `1.06`, this ensure that model coefficient estimates are stable and that model can confidently interpret the individual effects of each predictor on weight loss outcomes.
+[[1](https://www.numberanalytics.com/blog/essential-insights-vif-regression#:~:text=The%20Variance%20Inflation%20Factor,the%20predictor%20variables.%20In)][[2](https://pmc.ncbi.nlm.nih.gov/articles/PMC6900425/#:~:text=multicollinearity%2C%20measures%20to%20detect,text%2C%20the%20concepts%20of)][[3](https://www.analyticsvidhya.com/blog/2020/03/what-is-multicollinearity/)]
+
+The Q-Q plot of residuals demonstrates a normal distribution 
+, further validating the model's assumptions and strengthening the credibility of our findings. This normal distribution of residuals indicates that our model is well-specified and that the relationships between variables are appropriately captured.[[6](https://en.wikipedia.org/wiki/Q%E2%80%93Q_plot)]
+
+| **Characteristic**     |  **Interpretation**                                           |
+|------------------------|--------------------------------------------------------------|
+| **Age**                | As age increases, weight loss decreases slightly.             |
+| **AfterWeight**        | Higher after-weight slightly reduces weight loss.             |
+| **DietAdherence**      | Higher diet adherence significantly increases weight loss.    |
+| **ExerciseIntensity**  | Higher exercise intensity significantly increases weight loss.|
+
+
+# ** Regression with threshold = 0.2 **
+In here if i select `threshold = 0.2` than columns will:
+
+- **DietAdherence**
+- **ExerciseIntensity**
+- **Age**
+- **AfterWeight**
+- **SleepQuality**
+- **Gender_numeric**
+```{r}
+model2 <- lm(WeightLoss ~ Age + AfterWeight + DietAdherence + ExerciseIntensity +SleepQuality+ Gender_numeric, data = data)
+
+model2 %>%
+  tbl_regression() %>%
+  bold_labels() %>%
+  bold_p(t=.1)
+
+```
+
+
+```{r}
+summary(model2)
+```
+
+```{r}
+qqnorm(resid(model2))
+qqline(resid(model2))
+
+```
+
+
+```{r}
+print(vif(model2))
+
+barplot(vif(model2), main = "VIF Plot", col = "lightblue", ylim = c(0, max(vif(model2)) + 10),las = 2,      cex.names = 0.7)
+abline(h = 10, col = "red", lty = 2)
+```
+
+
+## Finding on threshold = 0.2
+My Model demonstrates exceptional statistical significance with an `F-statistic of 63.32  and a `p-value: 1.231e-14`.With an `R-squared value of 0.93` indicates that our model explains `93%` of the variance in weight loss outcomes [[4](https://statisticsbyjim.com/regression/interpret-r-squared-regression/#:~:text=R%2Dsquared%20is%20a%20goodness%2Dof%2Dfit,variance%20in%20the%20dependent)].The highly significant F-statistic (p < 0.001) provides robust evidence for the model's overall validity.[[5](https://en.wikipedia.org/wiki/P-value)]
+
+In here the residuals range from `-0.81299` to `0.81801`, with a median close to zero, which is generally a good sign.
+
+All `Variance Inflation Factor (VIF)` values in our model are below `1.12` and below the threshold, this ensure that model coefficient estimates are stable and that model can confidently interpret the individual effects of each predictor on weight loss outcomes.
+[[1](https://www.numberanalytics.com/blog/essential-insights-vif-regression#:~:text=The%20Variance%20Inflation%20Factor,the%20predictor%20variables.%20In)][[2](https://pmc.ncbi.nlm.nih.gov/articles/PMC6900425/#:~:text=multicollinearity%2C%20measures%20to%20detect,text%2C%20the%20concepts%20of)][[3](https://www.analyticsvidhya.com/blog/2020/03/what-is-multicollinearity/)]
+
+The Q-Q plot of residuals demonstrates a normal distribution 
+, further validating the model's assumptions and strengthening the credibility of our findings. This normal distribution of residuals indicates that our model is well-specified and that the relationships between variables are appropriately captured.[[6](https://en.wikipedia.org/wiki/Q%E2%80%93Q_plot)]
+
+| **Characteristic**     |  **Interpretation**                                           |
+|------------------------|--------------------------------------------------------------|
+| **Age**                | As age increases, weight loss decreases slightly.             |
+| **AfterWeight**        | Higher after-weight slightly reduces weight loss.             |
+| **Gender_numeric**     | Indicates potential differences in weight loss outcomes between genders.            |
+| **SleepQuality**       | Moderate positive effect             |
+| **DietAdherence**      | Second strongest positive effect    |
+| **ExerciseIntensity**  | Strongest positive predictor of weight loss.|
+
+
+# **Final Finding**
+
+### **Model Comparison and Key Findings**
+
+| Predictor        | Coefficient (Threshold 0.3) | Coefficient (Threshold 0.2) | p-value (Threshold 0.2)  | p-value (Threshold 0.3)  | Interpretation                                    |
+|------------------|----------------------------|----------------------------|-------------------------|-------------------------|--------------------------------------------------|
+| **Age**          | -0.04238                   | -0.030569                  | 0.00144                 | 0.007                 | Older age decreases weight loss.                |
+| **AfterWeight**  | -0.02999                   | -0.025912                  | 0.00393                 | 0.044                 | Higher starting weight decreases weight loss.   |
+| **DietAdherence**| 0.60710                    | 0.624733                   | <0.001                  | <0.001                  | Higher diet adherence increases weight loss.    |
+| **ExerciseIntensity** | 0.64168               | 0.728287                   | <0.001                  | <0.001                  | Higher exercise intensity increases weight loss.|
+| **SleepQuality** | N/A                        | 0.404399                   | <0.001                  | N/A                  | Better sleep quality increases weight loss.     |
+| **Gender_numeric**| N/A                       | 0.388966                   | 0.00712                 | N/A                  | Gender positively impacts weight loss.          |
+
+### **VIF (Variance Inflation Factor)**:
+All predictors have low VIF values (< 1.2), indicating no significant multicollinearity.
+
+### **Statistical Significance**:
+- **DietAdherence** and **ExerciseIntensity** are highly significant in both models.
+- **Age** and **AfterWeight** are significant predictors, with negative effects on weight loss.
+- **SleepQuality** and **Gender** show positive effects in the extended model.
+
+### **Practical Implications**:
+- Focus on improving **DietAdherence** and **ExerciseIntensity** for better weight loss outcomes.
+- Incorporate **SleepQuality** as part of the program for additional benefits.
+- **Age** and **AfterWeight** should be considered for personalized interventions.
+
+### **Limitation**:
+- **Sample Size:** With only 35 participants, the generalizability of the findings might be limited. Larger sample sizes are needed for more robust conclusions.
+- **External Factors:** The analysis only considers a few lifestyle factors, but other factors such as psychological health, stress, and external environmental influences were not accounted for.
+
+### **Conclusion**:
+Both models emphasize the importance of **DietAdherence** and **ExerciseIntensity** for weight loss. The extended model with **SleepQuality** and **Gender** provides a more comprehensive understanding. Tailored programs based on these factors will be more effective in helping individuals achieve weight loss goals.
